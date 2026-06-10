@@ -259,6 +259,9 @@ export interface DesktopActiveProfile {
 
 export interface DesktopConnectionConfig {
   envOverride: boolean
+  // Per-profile pin: keep this profile's remote backend connected while idle.
+  // Always false for the global scope (pinning is a per-profile concept).
+  keepConnected: boolean
   mode: 'local' | 'remote'
   // The profile this config describes, or null for the global/default
   // connection. Per-profile entries let a profile point at its own backend.
@@ -271,6 +274,9 @@ export interface DesktopConnectionConfig {
 }
 
 export interface DesktopConnectionConfigInput {
+  // Pin a per-profile remote backend so it stays connected while idle.
+  // Ignored for the global scope. Omitting preserves the saved value.
+  keepConnected?: boolean
   mode: 'local' | 'remote'
   // When set, the save/apply/test targets this profile's per-profile remote
   // override instead of the global connection.

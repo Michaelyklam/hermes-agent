@@ -50,7 +50,9 @@ const {
   cookiesHaveLiveSession,
   normAuthMode,
   normalizeRemoteBaseUrl,
+  profileKeepConnected,
   profileRemoteOverride,
+  profilesToKeepConnected,
   resolveAuthMode,
   resolveTestWsUrl,
   tokenPreview
@@ -4000,6 +4002,9 @@ async function sanitizeDesktopConnectionConfig(config = readDesktopConnectionCon
     remoteUrl,
     remoteTokenPreview: tokenPreview(remoteToken),
     remoteTokenSet: Boolean(remoteToken),
+    // Per-profile pin: keep this profile's remote backend connected while idle.
+    // Always false for the global scope (pinning is a per-profile concept).
+    keepConnected: profileKeepConnected(config, key),
     // The env override only forces the global/primary connection; a per-profile
     // scope is never overridden by HERMES_DESKTOP_REMOTE_URL.
     envOverride
@@ -4038,7 +4043,15 @@ function coerceDesktopConnectionConfig(input = {}, existing = readDesktopConnect
     // local entry clears the override so the profile inherits the default.
     const profiles = { ...(existing.profiles || {}) }
     if (mode === 'remote') {
-      profiles[key] = { mode: 'remote', ...buildRemoteBlock(remoteUrl, authMode, nextToken) }
+      // keepConnected: explicit input wins; otherwise preserve the saved flag,
+      // so unrelated saves (e.g. a token refresh) don't silently unpin.
+      const keepConnected =
+        input.keepConnected === undefined ? Boolean(existingBlock.keepConnected) : Boolean(input.keepConnected)
+      profiles[key] = {
+        mode: 'remote',
+        ...buildRemoteBlock(remoteUrl, authMode, nextToken),
+        ...(keepConnected ? { keepConnected: true } : {})
+      }
     } else {
       delete profiles[key]
     }

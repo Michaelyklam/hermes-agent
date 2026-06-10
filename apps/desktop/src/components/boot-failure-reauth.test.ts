@@ -7,6 +7,7 @@ import { deriveProviderShape, isRemoteReauthFailure, signInLabel } from './boot-
 function config(overrides: Partial<DesktopConnectionConfig> = {}): DesktopConnectionConfig {
   return {
     envOverride: false,
+    keepConnected: false,
     mode: 'remote',
     profile: null,
     remoteAuthMode: 'oauth',
