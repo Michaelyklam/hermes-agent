@@ -1,5 +1,5 @@
 import type { ConnectionState, GatewayEvent } from '@hermes/shared'
-import { atom } from 'nanostores'
+import { atom, map } from 'nanostores'
 
 import { HermesGateway } from '@/hermes'
 import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
@@ -66,10 +66,11 @@ const secondaries = new Map<string, Secondary>()
 // from pruning, so their socket — and through the keepalive ping, their pool
 // entry in the main process — stays alive with no live work. Empty for
 // everyone who hasn't pinned anything, leaving pruning behavior unchanged.
-let pinnedProfiles = new Set<string>()
+// An atom so the profile rail can reflect pins reactively.
+export const $pinnedProfiles = atom<ReadonlySet<string>>(new Set())
 
 export function setPinnedProfiles(profiles: readonly string[]): void {
-  pinnedProfiles = new Set(profiles.map(normKey))
+  $pinnedProfiles.set(new Set(profiles.map(normKey)))
 }
 
 // Refresh the pinned set from the main process (source of truth:
@@ -89,7 +90,7 @@ export async function refreshPinnedProfiles(): Promise<void> {
 // Serialized to avoid racing several ws-ticket mints; failures fall into each
 // entry's own reconnect/backoff. No-op when nothing is pinned.
 export async function warmPinnedGateways(): Promise<void> {
-  for (const key of pinnedProfiles) {
+  for (const key of $pinnedProfiles.get()) {
     await warmGatewayForProfile(key)
   }
 }
@@ -113,10 +114,18 @@ export function activeGateway(): HermesGateway | null {
 // composer reflect the active profile's socket without a background reconnect
 // flipping the foreground enabled/disabled state.
 function reportGatewayState(profile: string, state: ConnectionState): void {
+  $profileConnState.setKey(normKey(profile), state)
+
   if (normKey(profile) === activeKey) {
     setGatewayState(state)
   }
 }
+
+// Per-profile socket state, keyed by normalized profile name. Feeds the profile
+// rail's connection dot. Sparse: a profile appears once its socket has reported
+// at least one state; pruned entries are removed so a closed-and-evicted
+// background profile shows no dot rather than a stale one.
+export const $profileConnState = map<Record<string, ConnectionState | undefined>>({})
 
 export function reportPrimaryGatewayState(state: ConnectionState): void {
   reportGatewayState(primaryProfile, state)
@@ -308,7 +317,7 @@ export function touchSecondaryGateways(): void {
 // Bounds cost to live work plus explicit user pins.
 export function pruneSecondaryGateways(keep: Set<string>): void {
   for (const [key, entry] of [...secondaries]) {
-    if (key === activeKey || keep.has(key) || pinnedProfiles.has(key)) {
+    if (key === activeKey || keep.has(key) || $pinnedProfiles.get().has(key)) {
       continue
     }
 
@@ -318,6 +327,9 @@ export function pruneSecondaryGateways(keep: Set<string>): void {
     entry.offState()
     entry.gateway.close()
     secondaries.delete(key)
+    // Drop the rail-dot state: a deliberately closed background profile shows
+    // no dot, not a stale "closed" one.
+    $profileConnState.setKey(key, undefined)
   }
 }
 
@@ -333,6 +345,7 @@ export function closeSecondaryGateways(): void {
     entry.offEvent()
     entry.offState()
     entry.gateway.close()
+    $profileConnState.setKey(normKey(entry.profile), undefined)
   }
 
   secondaries.clear()

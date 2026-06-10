@@ -30,7 +30,9 @@ import { Tip, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { PROFILE_SWATCHES, profileColorSoft, resolveProfileColor } from '@/lib/profile-color'
+import { profileDotTone } from '@/lib/profile-dot'
 import { cn } from '@/lib/utils'
+import { $pinnedProfiles, $profileConnState } from '@/store/gateway'
 import {
   $activeGatewayProfile,
   $profileColors,
@@ -94,6 +96,8 @@ export function ProfileRail() {
   const gatewayProfile = useStore($activeGatewayProfile)
   const order = useStore($profileOrder)
   const colors = useStore($profileColors)
+  const pinned = useStore($pinnedProfiles)
+  const connState = useStore($profileConnState)
   const navigate = useNavigate()
 
   const [createOpen, setCreateOpen] = useState(false)
@@ -244,6 +248,10 @@ export function ProfileRail() {
                   <ProfileSquare
                     active={!isAll && normalizeProfileKey(profile.name) === activeKey}
                     color={resolveProfileColor(profile.name, colors)}
+                    dot={profileDotTone(
+                      connState[normalizeProfileKey(profile.name)],
+                      pinned.has(normalizeProfileKey(profile.name))
+                    )}
                     key={profile.name}
                     label={profile.name}
                     onDelete={() => setPendingDelete(profile)}
@@ -335,6 +343,9 @@ function ProfilePill({ active, glyph, label, onSelect }: ProfilePillProps) {
 interface ProfileSquareProps {
   active: boolean
   color: null | string
+  // Connection dot: 'green' = socket open, 'amber' = connecting / pinned-but-
+  // down, null = no dot (unpinned profile with no live socket — the default).
+  dot: 'amber' | 'green' | null
   label: string
   onSelect: () => void
   onRecolor: (color: null | string) => void
@@ -353,7 +364,7 @@ const LONG_PRESS_MS = 450
 // right-click to rename/delete. The button carries both the tooltip and
 // context-menu triggers via nested asChild Slots, so a single element keeps the
 // dnd listeners, hover tip, and right-click menu.
-function ProfileSquare({ active, color, label, onDelete, onRecolor, onRename, onSelect }: ProfileSquareProps) {
+function ProfileSquare({ active, color, dot, label, onDelete, onRecolor, onRename, onSelect }: ProfileSquareProps) {
   const { t } = useI18n()
   const p = t.profiles
   const hue = color ?? 'var(--ui-text-quaternary)'
@@ -402,7 +413,7 @@ function ProfileSquare({ active, color, label, onDelete, onRecolor, onRename, on
                 <TooltipTrigger asChild>
                   <button
                     className={cn(
-                      'grid size-5 shrink-0 cursor-grab touch-none select-none place-items-center rounded-[3px] text-[0.5625rem] font-semibold uppercase leading-none transition-opacity hover:opacity-100',
+                      'relative grid size-5 shrink-0 cursor-grab touch-none select-none place-items-center rounded-[3px] text-[0.5625rem] font-semibold uppercase leading-none transition-opacity hover:opacity-100',
                       active ? 'opacity-100' : 'opacity-55',
                       isDragging && 'z-10 cursor-grabbing opacity-100'
                     )}
@@ -453,6 +464,15 @@ function ProfileSquare({ active, color, label, onDelete, onRecolor, onRename, on
                     onPointerUp={clearPress}
                   >
                     {label.replace(/[^a-z0-9]/gi, '').charAt(0) || '?'}
+                    {dot ? (
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'absolute -right-0.5 -top-0.5 size-1.5 rounded-full',
+                          dot === 'green' ? 'bg-emerald-500' : 'bg-amber-500'
+                        )}
+                      />
+                    ) : null}
                   </button>
                 </TooltipTrigger>
               </ContextMenuTrigger>
