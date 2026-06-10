@@ -18,9 +18,11 @@ import {
   ensureGatewayForProfile,
   pruneSecondaryGateways,
   reconnectSecondaryGateways,
+  refreshPinnedProfiles,
   reportPrimaryGatewayState,
   setPrimaryGateway,
-  touchSecondaryGateways
+  touchSecondaryGateways,
+  warmPinnedGateways
 } from '@/store/gateway'
 import { notify, notifyError } from '@/store/notifications'
 import { $activeGatewayProfile, normalizeProfileKey, touchActiveGatewayBackend } from '@/store/profile'
@@ -269,7 +271,8 @@ export function useGatewayBoot({
     // Bound concurrency cost to live work: keep a background socket only while
     // its profile has a running (working) or blocked (needs-input) session.
     // Once that profile goes idle its socket is dropped and its backend is free
-    // to idle-reap. The active profile is always spared.
+    // to idle-reap. The active profile is always spared, and pinned
+    // (keepConnected) profiles are exempted inside pruneSecondaryGateways.
     const recomputeKeptGateways = () => {
       const live = new Set([...$workingSessionIds.get(), ...$attentionSessionIds.get()])
       const keep = new Set<string>()
@@ -346,6 +349,13 @@ export function useGatewayBoot({
         } catch {
           $activeGatewayProfile.set('default')
         }
+
+        // Pinned (keepConnected) backends: load the pin set, then open their
+        // background sockets so every pinned agent is reachable from app open.
+        // Fire-and-forget — failures land in each socket's own reconnect
+        // backoff and must never block or fail the boot. No-op (one resolved
+        // IPC call, no sockets) when nothing is pinned.
+        void refreshPinnedProfiles().then(() => warmPinnedGateways())
 
         setDesktopBootStep({
           phase: 'renderer.config',

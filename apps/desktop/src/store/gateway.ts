@@ -61,6 +61,39 @@ interface Secondary {
 
 const secondaries = new Map<string, Secondary>()
 
+// Profiles pinned via Settings → Gateway "Keep connected" (per-profile remote
+// backends the user wants reachable while idle). Pinned secondaries are exempt
+// from pruning, so their socket — and through the keepalive ping, their pool
+// entry in the main process — stays alive with no live work. Empty for
+// everyone who hasn't pinned anything, leaving pruning behavior unchanged.
+let pinnedProfiles = new Set<string>()
+
+export function setPinnedProfiles(profiles: readonly string[]): void {
+  pinnedProfiles = new Set(profiles.map(normKey))
+}
+
+// Refresh the pinned set from the main process (source of truth:
+// connection.json). Called at boot and after gateway-settings saves.
+export async function refreshPinnedProfiles(): Promise<void> {
+  try {
+    const profiles = await window.hermesDesktop?.listPinnedProfiles?.()
+    setPinnedProfiles(profiles ?? [])
+  } catch {
+    // Keep the previous set: a transient IPC failure must not unpin live
+    // backends (the next refresh corrects it).
+  }
+}
+
+// Warm every pinned profile's background socket so pinned backends are live
+// from app open (and immediately after pinning in settings), not first visit.
+// Serialized to avoid racing several ws-ticket mints; failures fall into each
+// entry's own reconnect/backoff. No-op when nothing is pinned.
+export async function warmPinnedGateways(): Promise<void> {
+  for (const key of pinnedProfiles) {
+    await warmGatewayForProfile(key)
+  }
+}
+
 let activeKey = 'default'
 
 export function isActivePrimary(): boolean {
@@ -182,14 +215,14 @@ function createSecondary(profile: string): Secondary {
   return entry
 }
 
-// Make `profile` the active gateway, lazily opening its socket if needed. The
-// primary is a no-op fast path. Background sockets are never closed here.
-export async function ensureGatewayForProfile(profile: string): Promise<void> {
+// Open (or re-open) `profile`'s background socket WITHOUT making it the active
+// gateway. Used to warm pinned (keepConnected) backends at boot and after a
+// settings save, so their agents are reachable before the user ever switches
+// to them. No-op for the primary, whose socket use-gateway-boot owns.
+export async function warmGatewayForProfile(profile: string): Promise<void> {
   const key = normKey(profile)
 
   if (key === primaryProfile) {
-    setActive(key)
-
     return
   }
 
@@ -210,6 +243,16 @@ export async function ensureGatewayForProfile(profile: string): Promise<void> {
     } catch {
       scheduleReconnect(entry)
     }
+  }
+}
+
+// Make `profile` the active gateway, lazily opening its socket if needed. The
+// primary is a no-op fast path. Background sockets are never closed here.
+export async function ensureGatewayForProfile(profile: string): Promise<void> {
+  const key = normKey(profile)
+
+  if (key !== primaryProfile) {
+    await warmGatewayForProfile(key)
   }
 
   setActive(key)
@@ -260,11 +303,12 @@ export function touchSecondaryGateways(): void {
   }
 }
 
-// Close + evict secondaries whose profile is neither active nor in `keep`
-// (profiles with a running / needs-input session). Bounds cost to live work.
+// Close + evict secondaries whose profile is neither active, in `keep`
+// (profiles with a running / needs-input session), nor pinned (keepConnected).
+// Bounds cost to live work plus explicit user pins.
 export function pruneSecondaryGateways(keep: Set<string>): void {
   for (const [key, entry] of [...secondaries]) {
-    if (key === activeKey || keep.has(key)) {
+    if (key === activeKey || keep.has(key) || pinnedProfiles.has(key)) {
       continue
     }
 
@@ -275,6 +319,11 @@ export function pruneSecondaryGateways(keep: Set<string>): void {
     entry.gateway.close()
     secondaries.delete(key)
   }
+}
+
+// Registry introspection for tests: whether a secondary entry exists.
+export function hasSecondaryGateway(profile: string): boolean {
+  return secondaries.has(normKey(profile))
 }
 
 export function closeSecondaryGateways(): void {
