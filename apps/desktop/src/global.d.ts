@@ -7,6 +7,9 @@ declare global {
       // the window's backend; pass a named profile to lazily spawn/reuse that
       // profile's backend from the pool.
       getConnection: (profile?: string | null) => Promise<HermesConnection>
+      // Profiles pinned via Settings → Gateway "Keep connected": kept connected
+      // while idle (exempt from socket pruning and backend reaping).
+      listPinnedProfiles: () => Promise<string[]>
       // Reconnect-after-wake recovery: liveness-probe the cached PRIMARY backend
       // and drop it if a remote one has gone unreachable, so the next
       // getConnection() rebuilds a reachable descriptor instead of the renderer

@@ -4442,15 +4442,31 @@ function touchPoolBackend(profile) {
   if (entry) entry.lastActiveAt = Date.now()
 }
 
+// Profiles pinned via Settings → Gateway "Keep connected": their pool entries
+// are exempt from LRU eviction and idle reaping. Pins require a per-profile
+// remote override, so a pinned entry never holds a local child process
+// (spawnPoolBackend's remote path keeps entry.process === null) — the
+// exemption keeps connection metadata + the renderer's socket alive, it does
+// not accumulate spawned processes.
+function pinnedPoolProfiles() {
+  try {
+    return new Set(profilesToKeepConnected(readDesktopConnectionConfig()))
+  } catch {
+    return new Set()
+  }
+}
+
 // Evict least-recently-used pool backends until at most `keep` remain — but only
 // ever evict backends without a live renderer socket (stale beyond the keepalive
 // window). When every backend is actively kept alive we let the pool exceed the
-// soft cap rather than kill a running session.
+// soft cap rather than kill a running session. Pinned (keepConnected) profiles
+// are never evicted.
 function evictLruPoolBackends(keep) {
   if (backendPool.size <= keep) return
   const now = Date.now()
+  const pinned = pinnedPoolProfiles()
   const evictable = [...backendPool.entries()]
-    .filter(([, entry]) => now - (entry.lastActiveAt || 0) > POOL_KEEPALIVE_FRESH_MS)
+    .filter(([profile, entry]) => !pinned.has(profile) && now - (entry.lastActiveAt || 0) > POOL_KEEPALIVE_FRESH_MS)
     .sort((a, b) => (a[1].lastActiveAt || 0) - (b[1].lastActiveAt || 0))
   let removable = backendPool.size - Math.max(0, keep)
   for (const [profile] of evictable) {
@@ -4465,7 +4481,9 @@ function startPoolIdleReaper() {
   if (poolIdleReaper) return
   poolIdleReaper = setInterval(() => {
     const now = Date.now()
+    const pinned = pinnedPoolProfiles()
     for (const [profile, entry] of [...backendPool.entries()]) {
+      if (pinned.has(profile)) continue
       if (now - (entry.lastActiveAt || 0) > POOL_IDLE_MS) {
         rememberLog(`Reaping idle profile backend "${profile}" (idle > ${Math.round(POOL_IDLE_MS / 1000)}s)`)
         stopPoolBackend(profile)
@@ -5028,11 +5046,29 @@ function createWindow() {
     restorePersistedZoomLevel(mainWindow)
     broadcastBootProgress()
     sendWindowStateChanged()
-    startHermes().catch(error => rememberLog(error.stack || error.message))
+    startHermes()
+      .then(() => {
+        // Eagerly connect pinned (keepConnected) profile backends so their
+        // agents are reachable from app open, not first visit. Best-effort:
+        // a failure logs and leaves recovery to the renderer's per-profile
+        // reconnect/backoff; it never blocks or fails the primary boot.
+        // No-op when nothing is pinned (the default), so the single-backend
+        // boot path is unchanged.
+        for (const profile of pinnedPoolProfiles()) {
+          if (profile === primaryProfileKey()) continue
+          ensureBackend(profile).catch(error =>
+            rememberLog(`Pinned backend "${profile}" failed to connect at boot: ${error.message}`)
+          )
+        }
+      })
+      .catch(error => rememberLog(error.stack || error.message))
   })
 }
 
 ipcMain.handle('hermes:connection', async (_event, profile) => ensureBackend(profile))
+// Profiles pinned via Settings → Gateway "Keep connected". The renderer folds
+// these into its socket keep-set so pinned backends stay connected while idle.
+ipcMain.handle('hermes:connection:pinned-profiles', async () => [...pinnedPoolProfiles()])
 // Reconnect-after-wake recovery. A REMOTE primary backend has no child process,
 // so the 'exit'/'error' handlers that would clear a dead connectionPromise never
 // fire — once the remote becomes unreachable across a sleep/wake the renderer
