@@ -611,6 +611,8 @@ export const zh: Translations = {
       authNeedsOauth: provider => `此网关使用 OAuth。请使用 ${provider} 登录以授权此桌面应用。`,
       tokenTitle: '会话 token',
       tokenDesc: '用于 REST 和 WebSocket 访问的 dashboard 会话 token。留空则保留已保存的 token。',
+      keepConnected: '保持连接',
+      keepConnectedDesc: '即使空闲时也保持与该后端的连接，使其智能体无需重连即可随时访问。',
       existingToken: value => `现有 token ${value}`,
       savedToken: '已保存',
       pasteSessionToken: '粘贴会话 token',

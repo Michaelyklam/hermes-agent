@@ -525,6 +525,8 @@ export const zhHant = defineLocale({
       authNeedsOauth: provider => `此閘道使用 OAuth。請使用 ${provider} 登入以授權此桌面應用程式。`,
       tokenTitle: '工作階段 Token',
       tokenDesc: '用於 REST 和 WebSocket 存取的儀表板工作階段 Token。留空則保留已儲存的 Token。',
+      keepConnected: '保持連線',
+      keepConnectedDesc: '即使閒置時也保持與該後端的連線，使其智能體無需重連即可隨時存取。',
       existingToken: value => `現有 Token ${value}`,
       savedToken: '已儲存',
       pasteSessionToken: '貼上工作階段 Token',

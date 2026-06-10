@@ -415,6 +415,9 @@ export const en: Translations = {
       authNeedsOauth: provider => `This gateway uses OAuth. Sign in with ${provider} to authorize this desktop app.`,
       tokenTitle: 'Session token',
       tokenDesc: 'The dashboard session token used for REST and WebSocket access. Leave blank to keep the saved token.',
+      keepConnected: 'Keep connected',
+      keepConnectedDesc:
+        'Stay connected to this backend even when idle, so its agent is always reachable without reconnecting.',
       existingToken: value => `Existing token ${value}`,
       savedToken: 'saved',
       pasteSessionToken: 'Paste session token',

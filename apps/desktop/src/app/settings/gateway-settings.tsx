@@ -3,10 +3,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import type { DesktopAuthProvider, DesktopConnectionProbeResult } from '@/global'
 import { useI18n } from '@/i18n'
 import { AlertCircle, Check, FileText, Globe, Loader2, LogIn, Monitor } from '@/lib/icons'
 import { cn } from '@/lib/utils'
+import { refreshPinnedProfiles, warmPinnedGateways } from '@/store/gateway'
 import { notify, notifyError } from '@/store/notifications'
 import { $profiles, refreshActiveProfile } from '@/store/profile'
 
@@ -19,6 +21,7 @@ type ProbeStatus = 'idle' | 'probing' | 'done' | 'error'
 
 interface GatewaySettingsState {
   envOverride: boolean
+  keepConnected: boolean
   mode: Mode
   remoteAuthMode: AuthMode
   remoteOauthConnected: boolean
@@ -29,6 +32,7 @@ interface GatewaySettingsState {
 
 const EMPTY_STATE: GatewaySettingsState = {
   envOverride: false,
+  keepConnected: false,
   mode: 'local',
   remoteAuthMode: 'token',
   remoteOauthConnected: false,
@@ -280,6 +284,9 @@ export function GatewaySettings() {
   }, [authMode, oauthConnected, remoteToken, state.remoteTokenSet, trimmedUrl])
 
   const payload = () => ({
+    // Pin only meaningful for per-profile remote scopes; never send for the
+    // global scope so its shape is unchanged.
+    keepConnected: scope !== null ? state.keepConnected : undefined,
     mode: state.mode,
     profile: scope ?? undefined,
     remoteAuthMode: authMode,
@@ -310,6 +317,9 @@ export function GatewaySettings() {
 
       setState(next)
       setRemoteToken('')
+      // The pin set may have changed: refresh it and warm any newly pinned
+      // backend so it connects right away (no restart or profile visit needed).
+      void refreshPinnedProfiles().then(() => warmPinnedGateways())
       notify({
         kind: 'success',
         title: apply ? g.restartingTitle : g.savedTitle,
@@ -577,6 +587,23 @@ export function GatewaySettings() {
             }
             description={g.tokenDesc}
             title={g.tokenTitle}
+          />
+        ) : null}
+
+        {/* Per-profile pin: keep this profile's remote backend connected while
+            idle. Only rendered for a per-profile remote scope — the global
+            connection is the primary backend, whose lifecycle isn't pooled. */}
+        {scope !== null && state.mode === 'remote' ? (
+          <ListRow
+            action={
+              <Switch
+                checked={state.keepConnected}
+                disabled={state.envOverride}
+                onCheckedChange={checked => setState(current => ({ ...current, keepConnected: checked }))}
+              />
+            }
+            description={g.keepConnectedDesc}
+            title={g.keepConnected}
           />
         ) : null}
       </div>

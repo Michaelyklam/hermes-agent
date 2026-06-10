@@ -537,6 +537,8 @@ export const ja = defineLocale({
       tokenTitle: 'セッショントークン',
       tokenDesc:
         'REST および WebSocket アクセスに使用するダッシュボードセッショントークン。保存済みトークンを維持するには空欄にしてください。',
+      keepConnected: '接続を維持',
+      keepConnectedDesc: 'アイドル時でもこのバックエンドへの接続を維持し、再接続なしでエージェントへ常にアクセスできるようにします。',
       existingToken: value => `既存のトークン ${value}`,
       savedToken: '保存済み',
       pasteSessionToken: 'セッショントークンを貼り付け',
