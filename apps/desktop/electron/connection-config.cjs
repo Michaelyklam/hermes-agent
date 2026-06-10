@@ -166,6 +166,30 @@ function profileRemoteOverride(config, profile) {
   return { url, authMode: normAuthMode(entry.authMode), token: entry.token }
 }
 
+/**
+ * True when `profile` has a valid remote override AND has opted into staying
+ * connected while idle (`keepConnected`). A pin without a remote override is
+ * meaningless — the primary/local backend's lifecycle is owned by
+ * startHermes() — so it is ignored rather than honored.
+ */
+function profileKeepConnected(config, profile) {
+  if (!profileRemoteOverride(config, profile)) {
+    return false
+  }
+
+  const key = connectionScopeKey(profile)
+  return Boolean(config?.profiles?.[key]?.keepConnected)
+}
+
+/**
+ * All profile names pinned via `keepConnected` (each necessarily carrying a
+ * valid remote override). Drives the idle-reaper/LRU exemptions and the
+ * boot-time eager-connect of pinned backends.
+ */
+function profilesToKeepConnected(config) {
+  return Object.keys(config?.profiles || {}).filter(name => profileKeepConnected(config, name))
+}
+
 function tokenPreview(value) {
   const raw = String(value || '')
 
@@ -247,7 +271,9 @@ module.exports = {
   cookiesHaveLiveSession,
   normAuthMode,
   normalizeRemoteBaseUrl,
+  profileKeepConnected,
   profileRemoteOverride,
+  profilesToKeepConnected,
   resolveAuthMode,
   resolveTestWsUrl,
   tokenPreview

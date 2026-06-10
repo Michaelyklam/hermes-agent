@@ -24,7 +24,9 @@ const {
   cookiesHaveLiveSession,
   normAuthMode,
   normalizeRemoteBaseUrl,
+  profileKeepConnected,
   profileRemoteOverride,
+  profilesToKeepConnected,
   resolveAuthMode,
   resolveTestWsUrl,
   tokenPreview
@@ -88,6 +90,58 @@ test('profileRemoteOverride tolerates a missing/!object profiles map', () => {
   assert.equal(profileRemoteOverride({}, 'coder'), null)
   assert.equal(profileRemoteOverride({ profiles: null }, 'coder'), null)
   assert.equal(profileRemoteOverride(null, 'coder'), null)
+})
+
+// --- profileKeepConnected / profilesToKeepConnected ---
+
+test('profileKeepConnected is true only for a valid remote override with keepConnected', () => {
+  const config = {
+    profiles: {
+      a: { mode: 'remote', url: 'https://a.example', keepConnected: true },
+      b: { mode: 'remote', url: 'https://b.example' },
+      c: { mode: 'local', keepConnected: true }, // pin without a remote override = ignored
+      d: { mode: 'remote', url: '', keepConnected: true } // url-less entry = no override = ignored
+    }
+  }
+  assert.equal(profileKeepConnected(config, 'a'), true)
+  assert.equal(profileKeepConnected(config, 'b'), false)
+  assert.equal(profileKeepConnected(config, 'c'), false)
+  assert.equal(profileKeepConnected(config, 'd'), false)
+})
+
+test('profileKeepConnected coerces truthy non-boolean flags', () => {
+  const config = { profiles: { a: { mode: 'remote', url: 'https://a.example', keepConnected: 1 } } }
+  assert.equal(profileKeepConnected(config, 'a'), true)
+})
+
+test('profileKeepConnected is false for the global scope and unknown profiles', () => {
+  const config = { profiles: { a: { mode: 'remote', url: 'https://a.example', keepConnected: true } } }
+  assert.equal(profileKeepConnected(config, null), false)
+  assert.equal(profileKeepConnected(config, ''), false)
+  assert.equal(profileKeepConnected(config, 'zzz'), false)
+})
+
+test('profileKeepConnected tolerates a missing/!object config', () => {
+  assert.equal(profileKeepConnected({}, 'a'), false)
+  assert.equal(profileKeepConnected(null, 'a'), false)
+})
+
+test('profilesToKeepConnected lists exactly the pinned remote profiles', () => {
+  const config = {
+    profiles: {
+      a: { mode: 'remote', url: 'https://a.example', keepConnected: true },
+      b: { mode: 'remote', url: 'https://b.example', keepConnected: true },
+      c: { mode: 'remote', url: 'https://c.example' },
+      d: { mode: 'local', keepConnected: true }
+    }
+  }
+  assert.deepEqual(profilesToKeepConnected(config).sort(), ['a', 'b'])
+})
+
+test('profilesToKeepConnected returns [] for empty/missing config', () => {
+  assert.deepEqual(profilesToKeepConnected({}), [])
+  assert.deepEqual(profilesToKeepConnected(null), [])
+  assert.deepEqual(profilesToKeepConnected({ profiles: null }), [])
 })
 
 // --- normalizeRemoteBaseUrl ---
